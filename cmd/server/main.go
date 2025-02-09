@@ -2,6 +2,7 @@ package main
 
 import (
 	"log"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -9,6 +10,7 @@ import (
 	"WebAPIGo/internal/handler"
 	"WebAPIGo/internal/kafka"
 	"WebAPIGo/internal/repository"
+	"WebAPIGo/internal/server"
 	"WebAPIGo/internal/service"
 )
 
@@ -34,19 +36,27 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to initialize Kafka producer: %v", err)
 	}
-	defer producer.Close()
+	defer func(producer *kafka.Producer) {
+		err := producer.Close()
+		if err != nil {
 
-	// Initialize repository and service.
+		}
+	}(producer)
+
+	router := gin.Default()
+
 	repo := repository.NewPaymentRepository()
 	svc := service.NewPaymentService(repo, producer)
-
-	// Initialize handler.
 	h := handler.NewPaymentHandler(svc)
 
-	r := gin.Default()
-	r.POST("/payment", h.HandlePayment)
+	router.POST("/payment", h.HandlePayment)
 
-	if err := r.Run(":8080"); err != nil {
-		log.Fatalf("Failed to start server: %v", err)
-	}
+	srv := server.NewServer(router, ":8080")
+
+	go srv.Start()
+
+	gracefulTimeout := 5 * time.Second // Set timeout for graceful shutdown.
+	srv.GracefulShutdown(gracefulTimeout)
+
+	log.Println("Application stopped.")
 }
